@@ -36,7 +36,7 @@ Download the framework-dependent version (~286KB). Requires [.NET 8 Desktop Runt
 ### Build
 
 ```bash
-git clone https://github.com/yourusername/DNote.git
+git clone https://github.com/shanghuashuo/DNote.git
 cd DNote
 dotnet build DNote/DNote.csproj -c Release
 ```
