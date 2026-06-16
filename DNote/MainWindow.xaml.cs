@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private TabControl? _tabControl;
     private RichTextBox? _activeRichTextBox;
     private bool _isLoadingContent;
+    private NoteItem? _currentNote;
     private static readonly string ImagesDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DNote", "images");
 
@@ -48,6 +49,12 @@ public partial class MainWindow : Window
 
             if (ViewModel.SelectedNote is not null)
                 LoadContent();
+        };
+
+        Closing += (_, _) =>
+        {
+            SaveContent();
+            ViewModel.FlushSave();
         };
 
         ViewModel.PropertyChanged += (_, e) =>
@@ -81,28 +88,39 @@ public partial class MainWindow : Window
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
+    private RichTextBox? GetRichTextBox()
+    {
+        var rtb = FindVisualChild<RichTextBox>(this);
+        if (rtb is not null && rtb != _activeRichTextBox)
+        {
+            _activeRichTextBox = rtb;
+            DataObject.AddPastingHandler(rtb, OnPaste);
+            rtb.PreviewKeyDown += RichTextBox_PreviewKeyDown;
+        }
+        return rtb;
+    }
+
     private void OnSelectedNoteChanged()
     {
-        if (_activeRichTextBox is null)
-            _activeRichTextBox = FindVisualChild<RichTextBox>(this);
-        LoadContent();
+        SaveContent();
+
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            var rtb = GetRichTextBox();
+            if (rtb is not null)
+                LoadContent();
+        }), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private void OnEditingChanged()
     {
-        if (_activeRichTextBox is null) return;
+        var rtb = GetRichTextBox();
+        if (rtb is null) return;
+
+        rtb.IsReadOnly = !ViewModel.IsEditing;
 
         if (ViewModel.IsEditing)
-        {
-            SaveContent();
-            _activeRichTextBox.IsReadOnly = false;
-            _activeRichTextBox.Focus();
-        }
-        else
-        {
-            SaveContent();
-            _activeRichTextBox.IsReadOnly = true;
-        }
+            rtb.Focus();
     }
 
     private void ContentArea_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -148,11 +166,12 @@ public partial class MainWindow : Window
 
     private void LoadContent()
     {
-        var rtb = _activeRichTextBox;
+        var rtb = GetRichTextBox();
         var note = ViewModel.SelectedNote;
         if (rtb is null || note is null) return;
 
         _isLoadingContent = true;
+        _currentNote = note;
         rtb.Document.Blocks.Clear();
 
         if (!string.IsNullOrEmpty(note.RtfContent))
@@ -190,8 +209,8 @@ public partial class MainWindow : Window
 
     private void SaveContent()
     {
-        var rtb = _activeRichTextBox;
-        var note = ViewModel.SelectedNote;
+        var rtb = GetRichTextBox();
+        var note = _currentNote;
         if (rtb is null || note is null) return;
 
         var images = new List<NoteImage>();
@@ -225,9 +244,6 @@ public partial class MainWindow : Window
             if (idx >= 0) text = text.Remove(idx, 1);
         }
         note.Content = text;
-
-        if (!_isLoadingContent)
-            ViewModel.OnContentChanged();
     }
 
     private System.Windows.Controls.Image CreateImageElement(string path)
@@ -279,20 +295,22 @@ public partial class MainWindow : Window
 
     private void Bold_Click(object sender, RoutedEventArgs e)
     {
-        if (_activeRichTextBox?.Selection is not TextSelection sel || sel.IsEmpty) return;
+        var rtb = GetRichTextBox();
+        if (rtb?.Selection is not TextSelection sel || sel.IsEmpty) return;
         var current = sel.GetPropertyValue(TextElement.FontWeightProperty);
         sel.ApplyPropertyValue(TextElement.FontWeightProperty,
             current is FontWeight fw && fw == FontWeights.Bold ? FontWeights.Normal : FontWeights.Bold);
-        _activeRichTextBox.Focus();
+        rtb.Focus();
     }
 
     private void Italic_Click(object sender, RoutedEventArgs e)
     {
-        if (_activeRichTextBox?.Selection is not TextSelection sel || sel.IsEmpty) return;
+        var rtb = GetRichTextBox();
+        if (rtb?.Selection is not TextSelection sel || sel.IsEmpty) return;
         var current = sel.GetPropertyValue(TextElement.FontStyleProperty);
         sel.ApplyPropertyValue(TextElement.FontStyleProperty,
             current is FontStyle fs && fs == FontStyles.Italic ? FontStyles.Normal : FontStyles.Italic);
-        _activeRichTextBox.Focus();
+        rtb.Focus();
     }
 
     private void InsertImage_Click(object sender, RoutedEventArgs e)
@@ -304,12 +322,13 @@ public partial class MainWindow : Window
         };
         if (dlg.ShowDialog() == true)
             InsertImageFromFile(dlg.FileName);
-        _activeRichTextBox?.Focus();
+        GetRichTextBox()?.Focus();
     }
 
     private void InsertImageFromFile(string filePath)
     {
-        if (_activeRichTextBox is null) return;
+        var rtb = GetRichTextBox();
+        if (rtb is null) return;
         try
         {
             Directory.CreateDirectory(ImagesDir);
@@ -319,30 +338,30 @@ public partial class MainWindow : Window
             File.Copy(filePath, destPath, true);
 
             var img = CreateImageElement(destPath);
-            var container = new InlineUIContainer(img, _activeRichTextBox.CaretPosition)
+            var container = new InlineUIContainer(img, rtb.CaretPosition)
             {
                 BaselineAlignment = BaselineAlignment.Bottom
             };
 
-            var paragraph = _activeRichTextBox.CaretPosition.Paragraph;
+            var paragraph = rtb.CaretPosition.Paragraph;
             if (paragraph is null)
             {
                 paragraph = new Paragraph();
-                _activeRichTextBox.Document.Blocks.Add(paragraph);
+                rtb.Document.Blocks.Add(paragraph);
             }
 
-            if (_activeRichTextBox.Selection.IsEmpty)
+            if (rtb.Selection.IsEmpty)
             {
                 paragraph.Inlines.Add(container);
                 paragraph.Inlines.Add(new Run(" "));
             }
             else
             {
-                _activeRichTextBox.Selection.Text = "";
+                rtb.Selection.Text = "";
                 paragraph.Inlines.Add(container);
             }
 
-            _activeRichTextBox.CaretPosition = container.ElementEnd;
+            rtb.CaretPosition = container.ElementEnd;
         }
         catch { }
     }
@@ -457,9 +476,12 @@ public partial class MainWindow : Window
         renameItem.Click += (_, _) => ShowRenameDialog();
         menu.Items.Add(renameItem);
 
-        var deleteItem = new MenuItem { Header = "删除" };
-        deleteItem.Click += (_, _) => ViewModel.DeleteNoteCommand.Execute(null);
-        menu.Items.Add(deleteItem);
+        if (ViewModel.Notes.Count > 1)
+        {
+            var deleteItem = new MenuItem { Header = "删除" };
+            deleteItem.Click += (_, _) => ViewModel.DeleteNoteCommand.Execute(null);
+            menu.Items.Add(deleteItem);
+        }
         menu.Items.Add(new Separator());
 
         var colorItem = new MenuItem { Header = "颜色" };

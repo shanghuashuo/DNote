@@ -60,6 +60,13 @@ public partial class MainViewModel : ObservableObject
     private void DeleteNote()
     {
         if (SelectedNote is null || Notes.Count <= 1) return;
+
+        foreach (var img in SelectedNote.Images)
+        {
+            try { if (System.IO.File.Exists(img.Path)) System.IO.File.Delete(img.Path); }
+            catch { }
+        }
+
         var index = Notes.IndexOf(SelectedNote);
         Notes.Remove(SelectedNote);
         SelectedNote = Notes[Math.Min(index, Notes.Count - 1)];
@@ -111,6 +118,13 @@ public partial class MainViewModel : ObservableObject
     }
 
     public WindowBounds? GetWindowBounds() => _data.WindowBounds;
+
+    public void FlushSave()
+    {
+        _saveTimer.Stop();
+        if (Notes.Count > 0)
+            PerformSave();
+    }
 
     private void ScheduleSave()
     {
