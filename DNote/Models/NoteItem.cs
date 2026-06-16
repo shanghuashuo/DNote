@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
@@ -9,6 +10,7 @@ public class NoteItem : INotifyPropertyChanged
 {
     private string _title = "新便签";
     private string _content = "";
+    private string _rtfContent = "";
     private string _color = "#FFF9C4";
 
     [JsonPropertyName("id")]
@@ -28,12 +30,22 @@ public class NoteItem : INotifyPropertyChanged
         set { _content = value; OnPropertyChanged(); }
     }
 
+    [JsonPropertyName("rtfContent")]
+    public string RtfContent
+    {
+        get => _rtfContent;
+        set { _rtfContent = value; OnPropertyChanged(); }
+    }
+
     [JsonPropertyName("color")]
     public string Color
     {
         get => _color;
         set { _color = value; OnPropertyChanged(); }
     }
+
+    [JsonPropertyName("images")]
+    public List<NoteImage> Images { get; set; } = new();
 
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; } = DateTime.Now;

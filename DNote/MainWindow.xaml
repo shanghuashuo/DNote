@@ -92,21 +92,215 @@
                     <TabControl.ContentTemplate>
                         <DataTemplate>
                             <Grid Background="{Binding Color}">
-                                <TextBlock Style="{StaticResource NoteTextStyle}"
-                                           Text="{Binding Content, Mode=OneWay}"
-                                           Cursor="IBeam"
-                                           MouseLeftButtonDown="ContentText_MouseLeftDown"
-                                           Visibility="{Binding DataContext.IsEditing, 
-                                                        RelativeSource={RelativeSource AncestorType=Window},
-                                                        Converter={StaticResource InverseBoolToVisibility}}"/>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
-                                <TextBox Style="{StaticResource NoteContentStyle}"
-                                         Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}"
-                                         TextChanged="ContentText_TextChanged"
-                                         LostFocus="ContentTextBox_LostFocus"
-                                         Visibility="{Binding DataContext.IsEditing, 
-                                                      RelativeSource={RelativeSource AncestorType=Window},
-                                                      Converter={StaticResource BoolToVisibility}}"/>
+                                <!-- RichTextBox (both read-only and edit modes) -->
+                                <RichTextBox x:Name="ContentRichTextBox"
+                                             Grid.Row="0"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Foreground="#3E2723"
+                                             FontSize="14"
+                                             FontFamily="Segoe UI"
+                                             Padding="10,8,10,4"
+                                             AcceptsReturn="True"
+                                             AcceptsTab="True"
+                                             VerticalScrollBarVisibility="Auto"
+                                             IsReadOnly="True"
+                                             MouseDoubleClick="ContentArea_MouseDoubleClick"
+                                             GotFocus="RichTextBox_GotFocus"
+                                             LostFocus="RichTextBox_LostFocus"
+                                             TextChanged="RichTextBox_TextChanged"/>
+
+                                <!-- Formatting toolbar -->
+                                <Grid Grid.Row="1"
+                                      Visibility="{Binding DataContext.IsEditing, 
+                                                   RelativeSource={RelativeSource AncestorType=Window},
+                                                   Converter={StaticResource BoolToVisibility}}">
+                                    <Grid.Background>
+                                        <SolidColorBrush Color="#10000000"/>
+                                    </Grid.Background>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="1"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <Rectangle Grid.Row="0" Fill="#15000000"/>
+
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="6,3">
+                                        <Button x:Name="BtnBold"
+                                                Content="B"
+                                                FontFamily="Georgia"
+                                                FontWeight="Bold"
+                                                FontSize="13"
+                                                Width="26" Height="24"
+                                                Margin="2,0"
+                                                Foreground="#5D4037"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Focusable="False"
+                                                Cursor="Hand"
+                                                Click="Bold_Click"
+                                                ToolTip="加粗">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border x:Name="bd"
+                                                                        Background="{TemplateBinding Background}"
+                                                                        CornerRadius="3"
+                                                                        Padding="6,2">
+                                                                    <ContentPresenter
+                                                                        HorizontalAlignment="Center"
+                                                                        VerticalAlignment="Center"/>
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="bd" Property="Background" Value="#20000000"/>
+                                                                    </Trigger>
+                                                                    <Trigger Property="IsPressed" Value="True">
+                                                                        <Setter TargetName="bd" Property="Background" Value="#30000000"/>
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+
+                                        <Button x:Name="BtnItalic"
+                                                Content="I"
+                                                FontFamily="Georgia"
+                                                FontStyle="Italic"
+                                                FontSize="13"
+                                                Width="26" Height="24"
+                                                Margin="2,0"
+                                                Foreground="#5D4037"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Focusable="False"
+                                                Cursor="Hand"
+                                                Click="Italic_Click"
+                                                ToolTip="斜体">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border x:Name="bd"
+                                                                        Background="{TemplateBinding Background}"
+                                                                        CornerRadius="3"
+                                                                        Padding="6,2">
+                                                                    <ContentPresenter
+                                                                        HorizontalAlignment="Center"
+                                                                        VerticalAlignment="Center"/>
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="bd" Property="Background" Value="#20000000"/>
+                                                                    </Trigger>
+                                                                    <Trigger Property="IsPressed" Value="True">
+                                                                        <Setter TargetName="bd" Property="Background" Value="#30000000"/>
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+
+                                        <Rectangle Width="1" Height="16" Fill="#20000000" Margin="6,0"/>
+
+                                        <Button x:Name="BtnImage"
+                                                Content="&#x1F5BC;"
+                                                FontSize="13"
+                                                Width="26" Height="24"
+                                                Margin="2,0"
+                                                Foreground="#5D4037"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Focusable="False"
+                                                Cursor="Hand"
+                                                Click="InsertImage_Click"
+                                                ToolTip="插入图片">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border x:Name="bd"
+                                                                        Background="{TemplateBinding Background}"
+                                                                        CornerRadius="3"
+                                                                        Padding="6,2">
+                                                                    <ContentPresenter
+                                                                        HorizontalAlignment="Center"
+                                                                        VerticalAlignment="Center"/>
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="bd" Property="Background" Value="#20000000"/>
+                                                                    </Trigger>
+                                                                    <Trigger Property="IsPressed" Value="True">
+                                                                        <Setter TargetName="bd" Property="Background" Value="#30000000"/>
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+
+                                        <Rectangle Width="1" Height="16" Fill="#20000000" Margin="6,0"/>
+
+                                        <Button x:Name="BtnDone"
+                                                Content="&#x2713;"
+                                                FontSize="14"
+                                                FontWeight="SemiBold"
+                                                Width="26" Height="24"
+                                                Margin="2,0"
+                                                Foreground="#4CAF50"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Focusable="False"
+                                                Cursor="Hand"
+                                                Click="Done_Click"
+                                                ToolTip="完成编辑 (Esc)">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border x:Name="bd"
+                                                                        Background="{TemplateBinding Background}"
+                                                                        CornerRadius="3"
+                                                                        Padding="6,2">
+                                                                    <ContentPresenter
+                                                                        HorizontalAlignment="Center"
+                                                                        VerticalAlignment="Center"/>
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="bd" Property="Background" Value="#20000000"/>
+                                                                    </Trigger>
+                                                                    <Trigger Property="IsPressed" Value="True">
+                                                                        <Setter TargetName="bd" Property="Background" Value="#30000000"/>
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
                             </Grid>
                         </DataTemplate>
                     </TabControl.ContentTemplate>

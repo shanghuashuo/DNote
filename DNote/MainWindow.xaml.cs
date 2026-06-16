@@ -1,7 +1,15 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
+using DNote.Models;
 using DNote.ViewModels;
+using Microsoft.Win32;
 
 namespace DNote;
 
@@ -9,6 +17,10 @@ public partial class MainWindow : Window
 {
     private MainViewModel ViewModel => (MainViewModel)DataContext;
     private TabControl? _tabControl;
+    private RichTextBox? _activeRichTextBox;
+    private bool _isLoadingContent;
+    private static readonly string ImagesDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DNote", "images");
 
     public MainWindow()
     {
@@ -26,12 +38,26 @@ public partial class MainWindow : Window
             }
             Topmost = ViewModel.IsTopmost;
             AttachTabContextMenus();
+
+            _activeRichTextBox = FindVisualChild<RichTextBox>(this);
+            if (_activeRichTextBox is not null)
+            {
+                DataObject.AddPastingHandler(_activeRichTextBox, OnPaste);
+                _activeRichTextBox.PreviewKeyDown += RichTextBox_PreviewKeyDown;
+            }
+
+            if (ViewModel.SelectedNote is not null)
+                LoadContent();
         };
 
         ViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(MainViewModel.IsTopmost))
                 Topmost = ViewModel.IsTopmost;
+            else if (e.PropertyName == nameof(MainViewModel.IsEditing))
+                OnEditingChanged();
+            else if (e.PropertyName == nameof(MainViewModel.SelectedNote))
+                OnSelectedNoteChanged();
         };
 
         LocationChanged += (_, _) => SaveBounds();
@@ -46,6 +72,7 @@ public partial class MainWindow : Window
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        ViewModel.IsEditing = false;
         if (e.ClickCount == 1)
             DragMove();
     }
@@ -54,23 +81,345 @@ public partial class MainWindow : Window
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
-    private void ContentText_MouseLeftDown(object sender, MouseButtonEventArgs e)
+    private void OnSelectedNoteChanged()
     {
-        if (e.ClickCount >= 2)
+        if (_activeRichTextBox is null)
+            _activeRichTextBox = FindVisualChild<RichTextBox>(this);
+        LoadContent();
+    }
+
+    private void OnEditingChanged()
+    {
+        if (_activeRichTextBox is null) return;
+
+        if (ViewModel.IsEditing)
+        {
+            SaveContent();
+            _activeRichTextBox.IsReadOnly = false;
+            _activeRichTextBox.Focus();
+        }
+        else
+        {
+            SaveContent();
+            _activeRichTextBox.IsReadOnly = true;
+        }
+    }
+
+    private void ContentArea_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (!ViewModel.IsEditing)
         {
             ViewModel.IsEditing = true;
             e.Handled = true;
         }
     }
 
-    private void ContentTextBox_LostFocus(object sender, RoutedEventArgs e)
+    private void RichTextBox_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (!ViewModel.IsEditing)
+            ViewModel.IsEditing = true;
+    }
+
+    private void RichTextBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        SaveContent();
+        ViewModel.IsEditing = false;
+    }
+
+    private void RichTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (ViewModel.IsEditing && !_isLoadingContent)
+            ViewModel.OnContentChanged();
+    }
+
+    private void RichTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            ViewModel.IsEditing = false;
+            e.Handled = true;
+        }
+    }
+
+    private void Done_Click(object sender, RoutedEventArgs e)
     {
         ViewModel.IsEditing = false;
     }
 
-    private void ContentText_TextChanged(object sender, TextChangedEventArgs e)
+    private void LoadContent()
     {
-        ViewModel.OnContentChanged();
+        var rtb = _activeRichTextBox;
+        var note = ViewModel.SelectedNote;
+        if (rtb is null || note is null) return;
+
+        _isLoadingContent = true;
+        rtb.Document.Blocks.Clear();
+
+        if (!string.IsNullOrEmpty(note.RtfContent))
+        {
+            var range = new TextRange(rtb.Document.ContentStart, rtb.Document.ContentEnd);
+            using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(note.RtfContent));
+            range.Load(ms, DataFormats.Rtf);
+        }
+        else if (!string.IsNullOrEmpty(note.Content))
+        {
+            rtb.Document.Blocks.Add(new Paragraph(new Run(note.Content)));
+        }
+
+        if (note.Images.Count > 0)
+        {
+            var sorted = note.Images.OrderByDescending(img => img.ByteOffset).ToList();
+            foreach (var noteImg in sorted)
+            {
+                if (!File.Exists(noteImg.Path)) continue;
+
+                var offset = Math.Min(noteImg.ByteOffset, GetTextLength(rtb));
+                var tp = GetTextPointerAtOffset(rtb.Document.ContentStart, offset);
+                if (tp is null) continue;
+
+                var paragraph = tp.Paragraph;
+                if (paragraph is null) continue;
+
+                var img = CreateImageElement(noteImg.Path);
+                var container = new InlineUIContainer(img, tp);
+            }
+        }
+
+        _isLoadingContent = false;
+    }
+
+    private void SaveContent()
+    {
+        var rtb = _activeRichTextBox;
+        var note = ViewModel.SelectedNote;
+        if (rtb is null || note is null) return;
+
+        var images = new List<NoteImage>();
+        foreach (var block in rtb.Document.Blocks)
+        {
+            if (block is not Paragraph para) continue;
+            foreach (var inline in para.Inlines.ToList())
+            {
+                if (inline is InlineUIContainer ui && ui.Child is System.Windows.Controls.Image img
+                    && img.Tag is string path)
+                {
+                    images.Add(new NoteImage
+                    {
+                        Path = path,
+                        ByteOffset = GetOffsetAtPointer(inline.ContentStart)
+                    });
+                }
+            }
+        }
+        note.Images = images;
+
+        var range = new TextRange(rtb.Document.ContentStart, rtb.Document.ContentEnd);
+        using var ms = new MemoryStream();
+        range.Save(ms, DataFormats.Rtf);
+        note.RtfContent = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+
+        var text = range.Text?.Trim() ?? "";
+        foreach (var _ in images)
+        {
+            var idx = text.IndexOf('\uFFFC');
+            if (idx >= 0) text = text.Remove(idx, 1);
+        }
+        note.Content = text;
+
+        if (!_isLoadingContent)
+            ViewModel.OnContentChanged();
+    }
+
+    private System.Windows.Controls.Image CreateImageElement(string path)
+    {
+        var img = new System.Windows.Controls.Image
+        {
+            Stretch = System.Windows.Media.Stretch.Uniform,
+            MaxWidth = 400,
+            Cursor = Cursors.Hand,
+            Tag = path
+        };
+
+        try
+        {
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.UriSource = new Uri(path);
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.DecodePixelWidth = 400;
+            bmp.EndInit();
+            bmp.Freeze();
+            img.Source = bmp;
+
+            if (bmp.PixelWidth > 400)
+            {
+                img.Width = 400;
+                img.Height = 400.0 * bmp.PixelHeight / bmp.PixelWidth;
+            }
+            else
+            {
+                img.Width = bmp.PixelWidth;
+                img.Height = bmp.PixelHeight;
+            }
+        }
+        catch { }
+
+        img.MouseLeftButtonDown += (_, e) =>
+        {
+            if (e.ClickCount >= 2)
+            {
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true }); }
+                catch { }
+                e.Handled = true;
+            }
+        };
+
+        return img;
+    }
+
+    private void Bold_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeRichTextBox?.Selection is not TextSelection sel || sel.IsEmpty) return;
+        var current = sel.GetPropertyValue(TextElement.FontWeightProperty);
+        sel.ApplyPropertyValue(TextElement.FontWeightProperty,
+            current is FontWeight fw && fw == FontWeights.Bold ? FontWeights.Normal : FontWeights.Bold);
+        _activeRichTextBox.Focus();
+    }
+
+    private void Italic_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeRichTextBox?.Selection is not TextSelection sel || sel.IsEmpty) return;
+        var current = sel.GetPropertyValue(TextElement.FontStyleProperty);
+        sel.ApplyPropertyValue(TextElement.FontStyleProperty,
+            current is FontStyle fs && fs == FontStyles.Italic ? FontStyles.Normal : FontStyles.Italic);
+        _activeRichTextBox.Focus();
+    }
+
+    private void InsertImage_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "选择图片",
+            Filter = "图片文件|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|所有文件|*.*"
+        };
+        if (dlg.ShowDialog() == true)
+            InsertImageFromFile(dlg.FileName);
+        _activeRichTextBox?.Focus();
+    }
+
+    private void InsertImageFromFile(string filePath)
+    {
+        if (_activeRichTextBox is null) return;
+        try
+        {
+            Directory.CreateDirectory(ImagesDir);
+            var ext = Path.GetExtension(filePath);
+            var fileName = Guid.NewGuid().ToString("N") + ext;
+            var destPath = Path.Combine(ImagesDir, fileName);
+            File.Copy(filePath, destPath, true);
+
+            var img = CreateImageElement(destPath);
+            var container = new InlineUIContainer(img, _activeRichTextBox.CaretPosition)
+            {
+                BaselineAlignment = BaselineAlignment.Bottom
+            };
+
+            var paragraph = _activeRichTextBox.CaretPosition.Paragraph;
+            if (paragraph is null)
+            {
+                paragraph = new Paragraph();
+                _activeRichTextBox.Document.Blocks.Add(paragraph);
+            }
+
+            if (_activeRichTextBox.Selection.IsEmpty)
+            {
+                paragraph.Inlines.Add(container);
+                paragraph.Inlines.Add(new Run(" "));
+            }
+            else
+            {
+                _activeRichTextBox.Selection.Text = "";
+                paragraph.Inlines.Add(container);
+            }
+
+            _activeRichTextBox.CaretPosition = container.ElementEnd;
+        }
+        catch { }
+    }
+
+    private void OnPaste(object sender, DataObjectPastingEventArgs e)
+    {
+        if (e.DataObject.GetDataPresent(DataFormats.Bitmap))
+        {
+            var bmpSource = e.DataObject.GetData(DataFormats.Bitmap) as BitmapSource;
+            if (bmpSource is null) { e.CancelCommand(); return; }
+
+            try
+            {
+                Directory.CreateDirectory(ImagesDir);
+                var fileName = Guid.NewGuid().ToString("N") + ".png";
+                var filePath = Path.Combine(ImagesDir, fileName);
+
+                using (var fs = new FileStream(filePath, FileMode.Create))
+                {
+                    var encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(bmpSource));
+                    encoder.Save(fs);
+                }
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    InsertImageFromFile(filePath);
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+
+            e.CancelCommand();
+        }
+    }
+
+    private static int GetOffsetAtPointer(TextPointer pointer)
+    {
+        int offset = 0;
+        var current = pointer.DocumentStart;
+        while (current is not null && current.CompareTo(pointer) < 0)
+        {
+            if (current.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
+                offset += current.GetTextRunLength(LogicalDirection.Forward);
+            current = current.GetNextInsertionPosition(LogicalDirection.Forward);
+        }
+        return offset;
+    }
+
+    private static int GetTextLength(RichTextBox rtb)
+    {
+        var range = new TextRange(rtb.Document.ContentStart, rtb.Document.ContentEnd);
+        return range.Text?.Length ?? 0;
+    }
+
+    private static TextPointer? GetTextPointerAtOffset(TextPointer start, int offset)
+    {
+        var current = start;
+        int accumulated = 0;
+        while (current is not null)
+        {
+            var ctx = current.GetPointerContext(LogicalDirection.Forward);
+            if (ctx == TextPointerContext.Text)
+            {
+                var runLen = current.GetTextRunLength(LogicalDirection.Forward);
+                if (accumulated + runLen >= offset)
+                    return current.GetPositionAtOffset(offset - accumulated);
+                accumulated += runLen;
+            }
+            var next = current.GetNextInsertionPosition(LogicalDirection.Forward);
+            if (next is null) break;
+            if (ctx == TextPointerContext.ElementStart || ctx == TextPointerContext.ElementEnd)
+            {
+                if (accumulated >= offset) return current;
+            }
+            current = next;
+        }
+        return null;
     }
 
     private void AttachTabContextMenus()
@@ -102,7 +451,6 @@ public partial class MainWindow : Window
         var addItem = new MenuItem { Header = "新建便签" };
         addItem.Click += (_, _) => ViewModel.AddNoteCommand.Execute(null);
         menu.Items.Add(addItem);
-
         menu.Items.Add(new Separator());
 
         var renameItem = new MenuItem { Header = "重命名" };
@@ -112,7 +460,6 @@ public partial class MainWindow : Window
         var deleteItem = new MenuItem { Header = "删除" };
         deleteItem.Click += (_, _) => ViewModel.DeleteNoteCommand.Execute(null);
         menu.Items.Add(deleteItem);
-
         menu.Items.Add(new Separator());
 
         var colorItem = new MenuItem { Header = "颜色" };
