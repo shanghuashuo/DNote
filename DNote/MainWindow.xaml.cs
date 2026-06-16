@@ -93,6 +93,12 @@ public partial class MainWindow : Window
         var rtb = FindVisualChild<RichTextBox>(this);
         if (rtb is not null && rtb != _activeRichTextBox)
         {
+            if (_activeRichTextBox is not null)
+            {
+                DataObject.RemovePastingHandler(_activeRichTextBox, OnPaste);
+                _activeRichTextBox.PreviewKeyDown -= RichTextBox_PreviewKeyDown;
+            }
+
             _activeRichTextBox = rtb;
             DataObject.AddPastingHandler(rtb, OnPaste);
             rtb.PreviewKeyDown += RichTextBox_PreviewKeyDown;
@@ -172,6 +178,8 @@ public partial class MainWindow : Window
 
         _isLoadingContent = true;
         _currentNote = note;
+
+        ClearDocumentImages(rtb);
         rtb.Document.Blocks.Clear();
 
         if (!string.IsNullOrEmpty(note.RtfContent))
@@ -546,5 +554,24 @@ public partial class MainWindow : Window
             if (result is not null) return result;
         }
         return null;
+    }
+
+    private static void ClearDocumentImages(RichTextBox rtb)
+    {
+        try
+        {
+            foreach (var block in rtb.Document.Blocks)
+            {
+                if (block is not Paragraph para) continue;
+                foreach (var inline in para.Inlines)
+                {
+                    if (inline is InlineUIContainer ui && ui.Child is System.Windows.Controls.Image img)
+                    {
+                        img.Source = null;
+                    }
+                }
+            }
+        }
+        catch { }
     }
 }
