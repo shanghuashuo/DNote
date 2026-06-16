@@ -1,12 +1,14 @@
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-DNOTE2026STICKY}
 AppName=DNote
-AppVersion=1.0.0
+AppVersion=1.0.3
 AppPublisher=DNote
 DefaultDirName={autopf}\DNote
 DefaultGroupName=DNote
 OutputDir=..\publish\installer
-OutputBaseFilename=DNote-Setup-1.0.0
+OutputBaseFilename=DNote-Setup-1.0.3
+SetupIconFile=..\DNote\app.ico
+UninstallDisplayIcon={app}\DNote.exe
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

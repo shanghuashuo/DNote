@@ -6,6 +6,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>DNote</RootNamespace>
     <AssemblyName>DNote</AssemblyName>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
