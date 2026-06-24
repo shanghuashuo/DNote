@@ -17,7 +17,7 @@ A lightweight, low-resource Windows desktop sticky note application with a skeuo
 
 ### Option 1: Installer (Recommended)
 
-Download `DNote-Setup-1.0.0.exe` from [Releases](../../releases), run the installer.
+Download `DNote-Setup-1.0.4.exe` from [Releases](../../releases), run the installer.
 
 ### Option 2: Portable
 
